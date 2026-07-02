@@ -14,7 +14,7 @@ Gaussian blur is dropped -- it barely helps on 32x32 images.
 CIFAR-100 is read from the (already cached) HuggingFace `uoft-cs/cifar100`.
 """
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms as T
+import torchvision.transforms as T
 from torchvision.transforms import InterpolationMode
 from datasets import load_dataset
 
@@ -35,7 +35,15 @@ def simclr_transform(size=IMG_SIZE, s=0.5):
       4. T.ToTensor()
       5. T.Normalize(MEAN, STD)
     """
-    raise NotImplementedError("TODO: build the SimCLR augmentation pipeline")
+    color_jitter = T.ColorJitter(0.8*s,0.8*s,0.8*s,0.2*s)
+    return T.Compose([
+        T.RandomResizedCrop(size, scale=(0.2,1.0)),
+        T.RandomHorizontalFlip(),
+        T.RandomApply([color_jitter], p=0.8),
+        T.RandomGrayscale(p=0.2),
+        T.ToTensor(),
+        T.Normalize(MEAN, STD),
+    ])
 
 
 def eval_transform(size=IMG_SIZE):
@@ -51,7 +59,7 @@ class TwoCropTransform:
 
     def __call__(self, x):
         # TODO: return two independent augmentations of the same image: (t(x), t'(x)).
-        raise NotImplementedError("TODO: return two augmented views of x")
+        return self.base_transform(x), self.base_transform(x)
 
 
 class _HFImages(Dataset):
@@ -83,4 +91,18 @@ def make_dataloaders(batch_size, num_workers=8, s=0.5):
       * build three DataLoaders. The contrastive loader must shuffle=True, drop_last=True;
         the two eval loaders shuffle=False. (pin_memory=True, num_workers as given.)
     """
-    raise NotImplementedError("TODO: build the three dataloaders")
+    df = load_dataset("uoft-cs/cifar100")
+    train, test = df["train"], df["test"]
+
+    contrastive_set = _HFImages(train, TwoCropTransform(simclr_transform(s=s)))
+    memory_set      = _HFImages(train, eval_transform())
+    test_set        = _HFImages(test,  eval_transform())
+
+    contrastive_loader = DataLoader(contrastive_set, batch_size=batch_size, shuffle=True,
+      drop_last=True, num_workers=num_workers, pin_memory=True)
+    memory_loader = DataLoader(memory_set, batch_size=batch_size, shuffle=False,
+      num_workers=num_workers, pin_memory=True)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False,
+      num_workers=num_workers, pin_memory=True)
+    
+    return contrastive_loader, memory_loader, test_loader

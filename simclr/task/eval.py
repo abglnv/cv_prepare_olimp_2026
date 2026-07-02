@@ -7,7 +7,7 @@ test image retrieve its k nearest neighbours by cosine similarity and predict th
 a temperature-weighted vote. This is the standard weighted-kNN monitor (Wu et al., 2018).
 """
 import torch
-
+import torch.nn.functional as F
 
 @torch.no_grad()
 def _extract_features(model, loader, device):
@@ -16,7 +16,15 @@ def _extract_features(model, loader, device):
     TODO: set model.eval(); for each (x, y) run h = model.features(x) on `device`,
     L2-normalize h (dim=1), collect h and y; return (feats [M, D], labels [M]).
     """
-    raise NotImplementedError("TODO: extract normalized features + labels")
+    model.eval()
+    feats, labels = [], []
+    for x, y in loader: 
+        x = x.to(device, non_blocking=True)
+        h = model.features(x)
+        h = F.normalize(h, dim=1)
+        feats.append(h)
+        labels.append(y.to(device))
+    return torch.cat(feats, dim=0), torch.cat(labels, dim=0)
 
 
 @torch.no_grad()
@@ -35,4 +43,25 @@ def knn_evaluate(model, memory_loader, test_loader, device,
           - prediction = argmax over classes; count correct
       * return 100 * correct / total.
     """
-    raise NotImplementedError("TODO: implement weighted kNN accuracy")
+    bank_feats, bank_labels = _extract_features(model, memory_loader, device)
+    correct, total = 0, 0
+
+    for x, y in test_loader:
+        x = x.to(device, non_blocking=True)
+        y = y.to(device)
+
+        q = F.normalize(model.features(x), dim=1)
+        sim = q @ bank_feats.T 
+
+        sim_w, idx = sim.topk(k, dim=1)     
+        neighbour_labels = bank_labels[idx]   
+        weights = torch.exp(sim_w / temperature)  
+
+        votes = torch.zeros(x.size(0), num_classes, device=device)
+        votes.scatter_add_(1, neighbour_labels, weights) 
+
+        pred = votes.argmax(dim=1)        
+        correct += (pred == y).sum().item()
+        total += y.size(0)
+
+    return 100.0 * correct / total    

@@ -75,11 +75,14 @@ class ProjectionHead(nn.Module):
         # TODO: build the MLP:
         #   Linear(in_dim, hidden_dim, bias=False) -> BatchNorm1d(hidden_dim)
         #     -> ReLU -> Linear(hidden_dim, out_dim)
-        raise NotImplementedError("TODO: build the projection head")
+        self.linear_1 = nn.Linear(in_dim, hidden_dim, bias=False)
+        self.batch_norm = nn.BatchNorm1d(hidden_dim)
+        self.relu = nn.ReLU()
+        self.linear_2 = nn.Linear(hidden_dim, out_dim)
 
     def forward(self, h):
         # TODO: return z = g(h)   [N, out_dim]
-        raise NotImplementedError("TODO: apply the projection head")
+        return self.linear_2(self.relu(self.batch_norm(self.linear_1(h))))
 
 
 class SimCLRModel(nn.Module):
@@ -93,12 +96,12 @@ class SimCLRModel(nn.Module):
     def features(self, x):
         """Representation h = f(x), used for downstream / kNN."""
         # TODO: return the encoder output h  [N, feature_dim]
-        raise NotImplementedError("TODO: return encoder features")
+        return self.encoder(x)
 
     def forward(self, x):
         """Projection z = g(f(x)), used for the contrastive loss."""
         # TODO: return z = projector(encoder(x))  [N, proj_dim]
-        raise NotImplementedError("TODO: return the projection")
+        return self.projector(self.features(x))
 
 
 def build_model(arch="resnet18", proj_dim=128):
